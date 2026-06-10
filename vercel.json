@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/", "destination": "/weBeetle Plinko Challenge.html" }
+  ]
+}
