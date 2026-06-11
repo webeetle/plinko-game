@@ -127,7 +127,7 @@
         r: demo ? 20 : 27,
         target, demo: !!demo,
         landed: false, restT: 0, done: false,
-        trail: [], sparks: [],
+        trail: [], sparks: [], _fx0: null,
       };
     }
 
@@ -227,14 +227,12 @@
       d.vy += g * h;
 
       const tx = this.slotCenter(d.target);
-      // No force while falling in open space — the disc only changes direction
-      // when it actually strikes a peg (below). That reads as real physics.
-      if (d.y >= this.pegBottom) {
-        // Funnel (below the pegs, no obstacles): gently ease onto the target
-        // column, velocity-matched and clamped so there is never a sudden yank.
-        const desiredVx = clamp((tx - d.x) * 2.2, -300, 300);
-        d.vx += (desiredVx - d.vx) * Math.min(1, 4.5 * h);
-      }
+      const frac = clamp((d.y - this.pegTop) / (this.pegBottom - this.pegTop), 0, 1);
+      // No force while falling in open space among the pegs — the disc only
+      // changes direction when it actually strikes a peg (below). That reads as
+      // real physics. The smooth guidance onto the winning column happens later,
+      // in the funnel (after integration), where a real plinko funnel would
+      // gently steer the ball toward a slot.
 
       // integrate
       d.x += d.vx * h;
@@ -268,10 +266,12 @@
             // reads as luck) and set a controlled, varied sideways speed. Vertical
             // momentum is preserved, so the disc keeps clattering DOWN naturally
             // while these many real bounces walk it toward the winning slot.
-            const frac = clamp((d.y - this.pegTop) / (this.pegBottom - this.pegTop), 0, 1);
             const dir = (tx - d.x) >= 0 ? 1 : -1;
             const side = Math.random() < lerp(0.72, 0.99, frac) ? dir : -dir;
-            d.vx = side * lerp(175, 250, frac) * (0.7 + 0.5 * Math.random());
+            // Lower rows give a bigger sideways kick so the disc closes most of
+            // the gap to the target column while it is still clattering through
+            // the pegs — that leaves only a small gap for the funnel to guide.
+            d.vx = side * lerp(175, 320, frac) * (0.7 + 0.5 * Math.random());
             peg.hit = performance.now();
             if (!d.demo) this._spark(d, peg);
             window.PlinkoAudio && window.PlinkoAudio.peg();
@@ -286,6 +286,22 @@
       } else if (d.x > this.wallR - d.r) {
         d.x = this.wallR - d.r; d.vx = -Math.abs(d.vx) * 0.5;
         window.PlinkoAudio && window.PlinkoAudio.wall();
+      }
+
+      // Funnel guidance (below the pegs, no obstacles): smoothly carry the disc
+      // from wherever the pegs left it onto the target column. A smoothstep ease
+      // means horizontal speed is zero at entry and zero on arrival — no sudden
+      // yank — and the disc is exactly centred on the target slot a little above
+      // the dividers, so the slot walls below never have to snap it across. This
+      // is what removes the visible "teleport" of the scripted result.
+      if (d.y >= this.pegBottom && !d.landed) {
+        if (d._fx0 == null) d._fx0 = d.x;          // capture entry x once
+        const span = (this.dividerTop - this.pegBottom) - 40; // finish above mouths
+        const fp = clamp((d.y - this.pegBottom) / span, 0, 1);
+        const e = fp * fp * (3 - 2 * fp);          // smoothstep ease in/out
+        const lx = lerp(d._fx0, tx, e);
+        d.vx = (lx - d.x) / Math.max(h, 1e-4);     // keep vx consistent for trail
+        d.x = lx;
       }
 
       // slot zone: constrain into target slot + divider bounce
